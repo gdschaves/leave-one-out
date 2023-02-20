@@ -1,0 +1,320 @@
+```{r load libraries}
+library(GSEABase)
+library(GSVA)
+library(data.table)
+library(stringr)
+library(tibble)
+library(survival)
+library(survminer)
+```
+
+
+```{r, for loop, error=TRUE}
+
+# Evaluate how long this takes
+start_time <- Sys.time()
+
+# Read gene expression df as in "Survival MES.Rmd"
+GSE49710 <- readRDS("../data/GSE49710.rds")
+GSE49710_GeneMatrix <- as.matrix(GSE49710)
+
+p_1234 <- readRDS("../data/p_1234.rds")
+
+# Read list of genes
+RNA_ADRN_Norm_vs_Hypo_Down_All_1234 <- readRDS("../data/RNA_ADRN_Norm_vs_Hypo_Down_All_1234.rds")
+
+# Pick 6 genes at random
+set.seed(1234)
+gene_list_random <- sample(RNA_ADRN_Norm_vs_Hypo_Down_All_1234, 2)
+
+# The p-value vectors will only be empty after entering the gene list for loop
+pval_bucket_smaller <- c()
+pval_bucket_bigger <- c()
+
+gene_vector_smaller <- c()
+gene_vector_bigger <- c()
+
+pval.vec = c()
+rank.vec <- c()
+
+gene_number = 0
+
+p_val_bonferroni_vector <- c()
+my_gene_vector <- c()
+
+# for loop decide number of elements
+for (my_gene in gene_list_random) {
+  
+  # In case the loop breaks for any gene,
+  # tryCatch continues the loop iteration after it breaks
+  tryCatch({
+  
+  gene_number = gene_number + 1
+  print (paste0("Starting with gene_number as: ", gene_number))
+  print (paste0("Gene is: ", my_gene))
+  
+  # Remove current gene from list
+  partial_list <- RNA_ADRN_Norm_vs_Hypo_Down_All_1234[!grepl(my_gene, unlist(RNA_ADRN_Norm_vs_Hypo_Down_All_1234))]
+  
+  # Name gene set with gene name that was removed
+  # This gene set name goes as column name in DF
+  partial_list_appended <- append(partial_list, paste0("partial_list_", my_gene), 0)
+  
+  # Write gene set to read, in the next step, for GSVA calculation
+  # Interesting that transposing the vector forced printing horizontally instead of vertically.
+  write.table(t(partial_list_appended), file = paste0("../data/", "leave_", my_gene, "_out.txt"),
+              sep = "\t",
+              row.names = F, 
+              col.names = F,
+              quote = F)
+  
+  # Read gene set for GSVA calculation, from the "data" folder
+  leave_gene_out_gmt <- getGmt(paste0("../data/", "leave_", my_gene, "_out.txt"))
+  
+  # Calculate GSVA for samples excluding the current gene from the gene set
+  GSE49710_GSVA <- gsva(GSE49710_GeneMatrix, 
+                          leave_gene_out_gmt, 
+                          min.sz=1, max.sz=Inf, 
+                          verbose=TRUE)
+  
+  # Bind GSVA and the gene matrix
+  GSVA_GeneExpression_Matrix <- rbind(GSE49710_GSVA, GSE49710_GeneMatrix)
+  
+  
+  #####################################################
+  ###### 2) Transpose and Name Column with Sample Names
+  #####################################################
+
+  GSVA_GSE49710_DF_transpose <- t(GSVA_GeneExpression_Matrix)
+  GSVA_GSE49710_DF_transpose <- as.data.frame(GSVA_GSE49710_DF_transpose)
+  GSVA_GSE49710_DF_transpose["Sample_ID"] <- rownames(GSVA_GSE49710_DF_transpose)
+  
+  #################################################
+  ###### 3) Load Metadata and Phenotype Information
+  #################################################
+
+  phenoGSE49710 <-read.delim(
+  file ="../data/GSE49710_3.txt")
+
+  dt1 <- data.table(phenoGSE49710, key = "Group_Accession") 
+  dt2 <- data.table(GSVA_GSE49710_DF_transpose, key = "Sample_ID")
+
+  GSE49710_GSVA_Pheno <- dt1[dt2]
+  
+  ######################################################
+  ###### 4) Fix Sample Name Information from Pheno File
+  ######################################################
+
+  # Split Each Patient ID
+  df_Title <- str_split_fixed(GSE49710_GSVA_Pheno$Title, " ", 4)
+  # Construct Vector Maintaining parts of interest
+  title_vector <- paste0(df_Title[,1], "_", df_Title[,2], df_Title[,4])
+  # Add vector to DF, after column of interest
+  GSE49710_GSVA_Pheno <- add_column(GSE49710_GSVA_Pheno, Title_Compatible = title_vector, .after = "Title")
+  
+  ############################################
+  ###### 5) Metadata and Phenotype Information
+  ############################################
+
+  ####################
+  ###### 5.1) Metadata
+  ####################
+
+  sampleInfo_GSE62564 <-read.delim(
+  file ="../data/sampleInfo.txt")
+
+  dt1 <- data.table(sampleInfo_GSE62564, key = "title") 
+  dt2 <- data.table(GSE49710_GSVA_Pheno, key = "Title_Compatible")
+
+  GSE49710_GSVA_Metadata_Complete <- dt1[dt2]
+  
+  
+  ##############################
+  ############ Select HR Samples
+  ##############################
+
+  GSE49710_GSVA_Pheno_Subset <- GSE49710_GSVA_Metadata_Complete[ which(
+  # GSE49710_GSVA_Metadata_Complete$High.risk == '0' |
+  GSE49710_GSVA_Metadata_Complete$High.risk == '1'  ), ]
+  
+  # Select some genes and the gene of interest
+  # 1 through 78 will not include the other genes in the dataframe
+  GSE49710_GSVA_Pheno_Subset <- GSE49710_GSVA_Pheno_Subset %>% dplyr::select(1:78, all_of(my_gene))
+  
+  ########################
+  ############ HR for loop
+  ########################
+  
+  y = 0
+  
+  for (i in 1:175) {
+    print(paste0("Removed gene is: ", my_gene))
+    print(paste0("Value of y is: ", y))
+    print(paste0("Value of i is: ", i))
+  
+    y = y + 1
+    n_samples_lowest_scores_group = y + 1
+    print (paste0("Number of samples in group with lowest scores: ", n_samples_lowest_scores_group))
+
+  
+    #################################################
+    ############ Order Column / Add Rank column to DF
+    #################################################
+  
+    GSE49710_GSVA_Pheno_Add = GSE49710_GSVA_Pheno_Subset[order(GSE49710_GSVA_Pheno_Subset[[paste0("partial_list_", my_gene)]]),]
+    # Rank based on GSVA of gene set excluding current my_gene
+    GSE49710_GSVA_Pheno_Add$Rank2 <- rank(GSE49710_GSVA_Pheno_Add[[paste0("partial_list_", my_gene)]])
+  
+  
+    ###########################################################################################
+    ############ Using Rank column, create sliding window: Split of MES High and MES Low Tumors
+    ###########################################################################################
+  
+    SlidingVector <- as.factor(
+      ifelse(GSE49710_GSVA_Pheno_Add$Rank2 <= y, SlidingVector <- "Low", SlidingVector <- "High"))
+  
+  
+    ##################################################################
+    ############ Add partition of High and Low MES scores, after Rank2
+    ##################################################################
+  
+    GSE49710_GSVA_Pheno_Add <- add_column(GSE49710_GSVA_Pheno_Add, SlidingColumn = SlidingVector, .after = "Rank2")
+  
+  
+    #########################################################################
+    ############ Fit Survival, based on the Split of Low and High MES Samples
+    #########################################################################
+  
+    fit <- survfit(Surv(efs.day.ch1, efs.bin.ch1) ~ GSE49710_GSVA_Pheno_Add$SlidingColumn,
+                data = GSE49710_GSVA_Pheno_Add)
+
+  
+    #####################################
+    ############ p-value and rank vectors
+    #####################################
+  
+    pval.value <- surv_pvalue(fit)$pval
+    pval.vec <- c(pval.vec, pval.value)
+    print(paste0("pval.vec is: ", pval.vec))
+  
+    rank.value <- print(GSE49710_GSVA_Pheno_Add$Rank2[y])
+    rank.vec <- c(rank.vec, rank.value)
+    print(paste0("rank.vec is: ", pval.vec))
+  
+  # End of for HR loop:
+  }
+  
+  #######################################
+  ############ P-values and Ranks into DF
+  #######################################
+
+  p.valRank <- cbind(rank.vec, pval.vec)
+  p.valRank <- as.data.frame(p.valRank)
+  
+  p.valRank$Gene = my_gene
+
+  p.valRank$Bonferroni = 
+        p.adjust(p.valRank$pval.vec, 
+                method = "bonferroni")
+
+  p.valRank$BH = 
+        p.adjust(p.valRank$pval.vec, 
+                method = "BH")
+
+  p.valRank$hochberg = 
+        p.adjust(p.valRank$pval.vec, 
+                 method = "hochberg")
+
+  p.valRank$holm = 
+        p.adjust(p.valRank$pval.vec, 
+                 method = "holm")
+  
+  p.valRank$hommel = 
+        p.adjust(p.valRank$pval.vec, 
+                 method = "hommel")
+  
+  p.valRank$BY = 
+        p.adjust(p.valRank$pval.vec, 
+                 method = "BY")
+  
+  # Rank order p-values
+  p.valRank_ordered = p.valRank[order(p.valRank["Bonferroni"]),]
+  
+  print("Data-Frame p.valRank_ordered:")
+  
+  print(p.valRank_ordered)
+  
+  # Make this a variable and pass it into the ifelse statement
+  p_val_bonferroni <- p.valRank_ordered[1,"Bonferroni"]
+  p_val_bonferroni_vector <- c(p_val_bonferroni_vector, p_val_bonferroni)
+  my_gene_vector <- c(my_gene_vector, my_gene)
+  
+  print(paste0("Gene number continues to be: ", gene_number))
+  print(paste0("p_1234 is: ", p_1234))
+  print(paste0("p.valRank_ordered Bonferroni is : ", p.valRank_ordered[1,"Bonferroni"]))
+  print(paste0("pval_bucket_smaller is : ", pval_bucket_smaller))
+  print(paste0("pval_bucket_bigger is : ", pval_bucket_bigger))
+  print(paste0("Current gene was : ", my_gene))
+
+  ifelse ( p.valRank_ordered[1,"Bonferroni"] <= p_1234,
+           pval_bucket_smaller <- c(pval_bucket_smaller, p.valRank_ordered[1,"Bonferroni"]),
+           ifelse(p.valRank_ordered[1,"Bonferroni"] > p_1234, pval_bucket_bigger <- c(pval_bucket_bigger, p.valRank_ordered[1,"Bonferroni"]),
+                  print("else")
+           )
+           )
+  
+  
+  ifelse ( p.valRank_ordered[1,"Bonferroni"] <= p_1234,
+         gene_vector_smaller <- c(gene_vector_smaller, my_gene),
+         ifelse(p.valRank_ordered[1,"Bonferroni"] > p_1234, gene_vector_bigger <- c(gene_vector_bigger, my_gene),
+                print("else"))
+         )
+  
+  # Print if number divisible by 2
+
+  gene_number_multiple_smaller = 0 
+  
+   if (gene_number %% 10 == 0) {
+     gene_number_multiple_smaller=gene_number_multiple_smaller + 1
+     write.table(gene_vector_smaller, file = paste0("../data/", "gene_vector_smaller_",gene_number,"_", my_gene, "_multiple_",gene_number_multiple_smaller,".txt"),
+               sep = "\t",
+               row.names = F, 
+               col.names = F,
+               quote = F)
+  }
+
+  gene_number_multiple_bigger = 0 
+  
+   if (gene_number %% 10 == 0) {
+     gene_number_multiple_bigger=gene_number_multiple_bigger + 1
+     write.table(gene_vector_bigger, file = paste0("../data/", "gene_vector_bigger_",gene_number,"_", my_gene, "_multiple_",gene_number_multiple_bigger,".txt"),
+               sep = "\t",
+               row.names = F, 
+               col.names = F,
+               quote = F)
+  }
+  
+  # Close tryCatch:
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+  
+  # End of gene list for loop:
+}
+
+### Plot Gene vs. adjusted pval
+gene_pvalue_df <- cbind(my_gene_vector, p_val_bonferroni_vector)
+gene_pvalue_df <- as.data.frame(gene_pvalue_df)
+gene_pvalue_df$p_val_bonferroni_vector <- as.numeric(gene_pvalue_df$p_val_bonferroni_vector)
+
+ggplot(gene_pvalue_df, aes(x=my_gene_vector, y=p_val_bonferroni_vector)) + 
+  geom_point()+
+  geom_hline(yintercept=p_1234, linetype="dashed", color= "red", size=2)
+
+ggplot(gene_pvalue_df, aes(x=my_gene_vector, y=-log2(p_val_bonferroni_vector))) + 
+  geom_point()+
+  geom_hline(yintercept=-log2(p_1234), linetype="dashed", color= "red", size=2)
+
+
+# Evaluate how long this takes
+end_time <- Sys.time()
+end_time - start_time
+```
