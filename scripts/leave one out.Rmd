@@ -255,6 +255,12 @@ for (my_gene in gene_list_random) {
   print(paste0("pval_bucket_smaller is : ", pval_bucket_smaller))
   print(paste0("pval_bucket_bigger is : ", pval_bucket_bigger))
   print(paste0("Current gene was : ", my_gene))
+  
+  ################################################################################
+  ############ Construct vectors of genes smaller and bigger than baseline p-value
+  ################################################################################
+  
+  # The baseline p-value is p_1234
 
   ifelse ( p.valRank_ordered[1,"Bonferroni"] <= p_1234,
            pval_bucket_smaller <- c(pval_bucket_smaller, p.valRank_ordered[1,"Bonferroni"]),
