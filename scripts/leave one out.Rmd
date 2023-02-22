@@ -9,7 +9,7 @@ library(survminer)
 ```
 
 
-```{r, for loop, error=TRUE}
+```{r, for loop}
 
 # Evaluate how long this takes
 start_time <- Sys.time()
@@ -280,7 +280,7 @@ for (my_gene in gene_list_random) {
 
   gene_number_multiple_smaller = 0 
   
-   if (gene_number %% 10 == 0) {
+   if (gene_number %% 100 == 0) {
      gene_number_multiple_smaller=gene_number_multiple_smaller + 1
      write.table(gene_vector_smaller, file = paste0("../data/", "gene_vector_smaller_",gene_number,"_", my_gene, "_multiple_",gene_number_multiple_smaller,".txt"),
                sep = "\t",
@@ -291,7 +291,7 @@ for (my_gene in gene_list_random) {
 
   gene_number_multiple_bigger = 0 
   
-   if (gene_number %% 10 == 0) {
+   if (gene_number %% 100 == 0) {
      gene_number_multiple_bigger=gene_number_multiple_bigger + 1
      write.table(gene_vector_bigger, file = paste0("../data/", "gene_vector_bigger_",gene_number,"_", my_gene, "_multiple_",gene_number_multiple_bigger,".txt"),
                sep = "\t",
@@ -311,16 +311,30 @@ gene_pvalue_df <- cbind(my_gene_vector, p_val_bonferroni_vector)
 gene_pvalue_df <- as.data.frame(gene_pvalue_df)
 gene_pvalue_df$p_val_bonferroni_vector <- as.numeric(gene_pvalue_df$p_val_bonferroni_vector)
 
+
+pdf(file = "../plots/pvalue_bonferroni.pdf",   
+    width = 4, 
+    height = 4)
+
 ggplot(gene_pvalue_df, aes(x=my_gene_vector, y=p_val_bonferroni_vector)) + 
   geom_point()+
   geom_hline(yintercept=p_1234, linetype="dashed", color= "red", size=2)
+
+dev.off()
+
+pdf(file = "../plots/pvalue_bonferroni_log.pdf",   
+    width = 4, 
+    height = 4)
 
 ggplot(gene_pvalue_df, aes(x=my_gene_vector, y=-log2(p_val_bonferroni_vector))) + 
   geom_point()+
   geom_hline(yintercept=-log2(p_1234), linetype="dashed", color= "red", size=2)
 
+dev.off()
 
 # Evaluate how long this takes
 end_time <- Sys.time()
 end_time - start_time
+
+
 ```

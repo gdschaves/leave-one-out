@@ -1,0 +1,234 @@
+```{r load libraries}
+library(GSEABase)
+library(GSVA)
+library(data.table)
+library(stringr)
+library(tibble)
+library(survival)
+library(survminer)
+library(ggpubr)
+library(ggVennDiagram)
+
+library(rempsyc)
+library(dplyr)
+```
+
+```{r}
+# Evaluate how long this takes
+start_time <- Sys.time()
+
+
+
+
+#################################
+###### 1) Read gene expression df
+#################################
+
+GSE49711 <- readRDS("../data/GSE49711.rds")
+GSE49711_GeneMatrix <- as.matrix(GSE49711)
+
+GSE49711_rownames <- rownames(GSE49711_GeneMatrix)
+
+#####################################################
+###### 2) Transpose and Name Column with Sample Names
+#####################################################
+
+GSVA_GSE49711_DF_transpose <- t(GSE49711_GeneMatrix)
+GSVA_GSE49711_DF_transpose <- as.data.frame(GSVA_GSE49711_DF_transpose)
+GSVA_GSE49711_DF_transpose["Sample_ID"] <- rownames(GSVA_GSE49711_DF_transpose)
+
+
+#################################################
+###### 3) Load Metadata and Phenotype Information
+#################################################
+
+phenoGSE49710 <-read.delim(
+file ="../data/GSE49710_3.txt")
+
+dt1 <- data.table(phenoGSE49710, key = "Group_Accession") 
+dt2 <- data.table(GSVA_GSE49711_DF_transpose, key = "Sample_ID")
+
+GSE49711_GSVA_Pheno <- dt1[dt2]
+
+######################################################
+###### 4) Fix Sample Name Information from Pheno File
+######################################################
+
+# Split Each Patient ID
+df_Title <- str_split_fixed(GSE49711_GSVA_Pheno$Title, " ", 4)
+# Construct Vector Maintaining parts of interest
+title_vector <- paste0(df_Title[,1], "_", df_Title[,2], df_Title[,4])
+# Add vector to DF, after column of interest
+GSE49711_GSVA_Pheno <- add_column(GSE49711_GSVA_Pheno, Title_Compatible = title_vector, .after = "Title")
+
+############################################
+###### 5) Metadata and Phenotype Information
+############################################
+
+####################
+###### 5.1) Metadata
+####################
+
+sampleInfo_GSE62564 <-read.delim(
+file ="../data/sampleInfo.txt")
+
+dt1 <- data.table(sampleInfo_GSE62564, key = "title") 
+dt2 <- data.table(GSE49711_GSVA_Pheno, key = "Title_Compatible")
+
+GSE49711_GSVA_Metadata_Complete <- dt1[dt2]
+
+
+##############################
+############ Select HR Samples
+##############################
+
+GSE49711_GSVA_Pheno_Subset <- GSE49711_GSVA_Metadata_Complete[ which(
+# GSE49711_GSVA_Metadata_Complete$High.risk == '0' |
+GSE49711_GSVA_Metadata_Complete$High.risk == '1'  ), ]
+
+GSE49711_GSVA_Pheno_Subset$Death.from.disease <- as.factor(GSE49711_GSVA_Pheno_Subset$Death.from.disease)
+
+
+# Read list of genes
+List_RNA_Normoxia_ADRN_vs_MES_Down_1469 <- readRDS("../data/List_RNA_Normoxia_ADRN_vs_MES_Down_1469.rds")
+length(List_RNA_Normoxia_ADRN_vs_MES_Down_1469)
+
+ggboxplot(
+  GSE49711_GSVA_Pheno_Subset, 
+  x="Death.from.disease", 
+  y = my_gene,
+  color = "black",
+  fill = "Death.from.disease",
+  #facet.by = "Identity",
+  palette = c("#e822f2", "#22a9f2", "#f29122", "#f29122", "#f29122"),
+  ylab = paste0(my_gene),
+  xlab = "Death.from.disease Label",
+  notch= TRUE,
+  add = c("mean_sd","jitter", "median"),
+  #position = position_dodge(0.8)
+  ) +
+  stat_compare_means(
+    aes(group = Death.from.disease),
+    label = "p.format",
+    method = "t.test")
+```
+
+
+
+```{r venn diagram}
+
+y <- list(
+  ADRN = List_RNA_Normoxia_ADRN_vs_MES_Down_1469,
+  GSE49711 = GSE49711_rownames)
+
+ggVennDiagram(y, label = "count", edge_size = 5000, show_intersect=F) + 
+  labs(title = "Gene Sets Intersections",
+       subtitle = "MES and GSE49711 rownames",
+       caption = Sys.Date())+ 
+  scale_fill_distiller(palette = "RdBu")
+
+intersect_mes_GSE49711_rownames <- intersect(List_RNA_Normoxia_ADRN_vs_MES_Down_1469, GSE49711_rownames)
+
+```
+
+```{r for loop}
+
+# Evaluate how long this takes
+start_time <- Sys.time()
+
+gene_number_in_line = 0
+
+my_gene_vector <- c()
+pvalue_vector <- c()
+
+for (my_gene in intersect_mes_GSE49711_rownames[1:500]) {
+  
+  # In case the loop breaks in any of the iterations,
+  # tryCatch continues the loop iteration after it breaks
+  
+  tryCatch({
+  
+  print(paste0("The MES gene is: ", my_gene))
+  
+  gene_number_in_line = gene_number_in_line + 1
+  print(paste0("Gene ", my_gene, " is number ", gene_number_in_line, " in line"))
+  
+  average_result <- GSE49711_GSVA_Pheno_Subset %>%
+  group_by(Death.from.disease) %>%
+  summarise_at(vars(!!my_gene), list(my_gene = mean))
+  
+  print(paste0("Mean expression of ", my_gene, " for Survivors is: ", average_result$my_gene[1]))
+  print(paste0("Mean expression of ", my_gene, " for Deceased is: ", average_result$my_gene[2]))
+  
+  t.test.result <- nice_t_test(data = GSE49711_GSVA_Pheno_Subset,
+                             response = my_gene,
+                             group = "Death.from.disease",
+                             warning = FALSE)
+  print(paste0("P-value of ", my_gene, " the comparison is: ", t.test.result$p))
+  
+  
+  if ((average_result$my_gene[1] < average_result$my_gene[2]) & t.test.result$p < 0.05 ) {
+  print(paste0("Gene ",my_gene, " is significant"))
+  pvalue_vector <- c(pvalue_vector, t.test.result$p)
+  my_gene_vector <- c(my_gene_vector, my_gene)
+  }
+  
+  # Close tryCatch:
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+  # End for loop:
+  }
+
+
+
+
+
+# Evaluate how long this takes
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+```{r}
+library(rempsyc)
+
+t.test.result <- nice_t_test(data = GSE49711_GSVA_Pheno_Subset,
+                             response = my_gene,
+                             group = "Death.from.disease",
+                             warning = FALSE)
+
+
+library(dplyr)
+
+average_result <- GSE49711_GSVA_Pheno_Subset %>%
+  group_by(Death.from.disease) %>%
+  summarise_at(vars(!!my_gene), list(my_gene = mean))
+
+
+if ((average_result$my_gene[1] > average_result$my_gene[2]) & t.test.result$p < 0.05 ) {
+print(my_gene)
+}
+
+```
+
+```{r}
+library(dplyr)
+
+GSE49711_death <- GSE49711_GSVA_Pheno_Subset %>% group_by(Death.from.disease) %>% 
+  dplyr::summarize(n=n(), 
+                   
+                   median_MES_Gene=median(TTLL10), 
+                   mean_MES_Gene=mean(TTLL10),
+                   sd_MES_Gene=sd(TTLL10)
+                   
+                   ) 
+
+
+
+library(dplyr)
+
+GSE49711_GSVA_Pheno_Subset %>%
+  group_by(Death.from.disease) %>%
+  summarise_at(vars(!!my_gene), list(my_gene = mean))
+```
+
+
