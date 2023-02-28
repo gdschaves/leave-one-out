@@ -48,11 +48,11 @@ surv_prob_1_500_vector_low                <- c()
 
 adjusted_pval_vector                      <- c()
 
-intersect_mes_hypo_up_94 <- readRDS("../data/intersect_mes_hypo_up_94.rds")
+# strict_mes_1375.rds      <- readRDS("../data/strict_mes_1375.rds")
+strict_hypo_up_460       <- readRDS("../data/strict_hypo_up_460.rds")
+# intersect_mes_hypo_up_94 <- readRDS("../data/intersect_mes_hypo_up_94.rds")
 
-"../data/intersect_mes_hypo_up_94.rds"
-
-for (my_gene in intersect_mes_hypo_up_94) {
+for (my_gene in strict_hypo_up_460) {
   
   tryCatch({
     
@@ -358,7 +358,13 @@ tmp_partition <- cbind(gene_vector, partition_vector)
 tmp_pvalue <- cbind(tmp_partition, smallest_pval_vector)
 tmp_pvalue <- cbind(tmp_pvalue, adjusted_pval_vector)
 
-write.table(tmp_pvalue, file = paste0("../data/", "tmp_pvalue_df_gardner.txt"),
+write.table(tmp_pvalue, file = paste0("../data/", "tmp_pvalue_df_gardner_2.txt"),
+            sep = "\t",
+            row.names = F,
+            col.names = T,
+            quote = F)
+
+write.table(strict_hypo_up_460, file = paste0("../data/", "strict_hypo_up_460.txt"),
             sep = "\t",
             row.names = F,
             col.names = T,
@@ -385,4 +391,10 @@ write.table(gene_partition_surv_prob_500_1000_2000_df, file = paste0("../data/",
             sep = "\t",
             row.names = F,
             col.names = F,
+            quote = F)
+
+write.table(gene_partition_surv_prob_500_1000_2000_df, file = paste0("../data/", "strict_hypo_up_460_gene_partition_surv_prob_500_1000_2000_df.txt"),
+            sep = "\t",
+            row.names = F,
+            col.names = T,
             quote = F)
