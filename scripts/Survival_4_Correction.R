@@ -48,7 +48,9 @@ surv_prob_1_500_vector_low                <- c()
 
 adjusted_pval_vector                      <- c()
 
-intersect_mes_hypo_up_94 <- readRDS("../../leave one out/data/intersect_mes_hypo_up_94.rds")
+intersect_mes_hypo_up_94 <- readRDS("../data/intersect_mes_hypo_up_94.rds")
+
+"../data/intersect_mes_hypo_up_94.rds"
 
 for (my_gene in intersect_mes_hypo_up_94) {
   
