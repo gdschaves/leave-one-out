@@ -1,0 +1,2 @@
+my_gene_vector_high	new_score_vector_high	old_score_vector_high	old_score_vector_low	my_gene_vector_low	new_score_vector_low	old_score_vector_low	old_score_vector_low
+CYP4X1	-0.00771467351350533	0.00290926465579597	-0.470081248538017	CYP4X1	-0.463797648945487	-0.470081248538017	-0.470081248538017
